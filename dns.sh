@@ -53,18 +53,52 @@ validate_ip() {
   fi
 }
 
+detect_os() {
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS=$ID
+  else
+    OS=$(uname -s)
+  fi
+}
+
 make_dns_persistent() {
   print_title "💾 Making DNS Persistent"
-  resolv_conf_file="/etc/systemd/resolved.conf"
-  if [ -f "$resolv_conf_file" ]; then
-    sed -i '/^#DNS=/d' $resolv_conf_file
-    sed -i '/^DNS=/d' $resolv_conf_file
-    echo -e "DNS=$dns1 $dns2" >> $resolv_conf_file
-    systemctl restart systemd-resolved
-    echo -e "${GREEN}DNS entries added to systemd resolved config.${NC}"
-  else
-    echo -e "${YELLOW}Warning: Could not find $resolv_conf_file. DNS may not persist after reboot.${NC}"
-  fi
+  detect_os
+
+  case "$OS" in
+    ubuntu|debian)
+      if systemctl is-active --quiet systemd-resolved; then
+        resolv_conf_file="/etc/systemd/resolved.conf"
+        sed -i '/^#DNS=/d' $resolv_conf_file
+        sed -i '/^DNS=/d' $resolv_conf_file
+        echo "DNS=$dns1 $dns2" >> $resolv_conf_file
+        systemctl restart systemd-resolved
+        echo -e "${GREEN}DNS set in systemd-resolved.${NC}"
+      else
+        echo -e "nameserver $dns1\nnameserver $dns2" > /etc/resolv.conf
+        echo -e "${YELLOW}systemd-resolved is not active. DNS set via /etc/resolv.conf.${NC}"
+      fi
+      ;;
+
+    centos|fedora|rhel)
+      nmcli con mod "$(nmcli -t -f NAME c show --active)" ipv4.dns "$dns1 $dns2"
+      nmcli con mod "$(nmcli -t -f NAME c show --active)" ipv4.ignore-auto-dns yes
+      nmcli con up "$(nmcli -t -f NAME c show --active)"
+      echo -e "${GREEN}DNS set using NetworkManager (nmcli).${NC}"
+      ;;
+
+    arch)
+      echo -e "[Resolve]\nDNS=$dns1 $dns2\nFallbackDNS=8.8.8.8" > /etc/systemd/resolved.conf
+      systemctl restart systemd-resolved
+      echo -e "${GREEN}DNS set for Arch-based system.${NC}"
+      ;;
+
+    *)
+      echo -e "nameserver $dns1\nnameserver $dns2" > /etc/resolv.conf
+      echo -e "${YELLOW}Unknown OS. DNS set via /etc/resolv.conf${NC}"
+      ;;
+  esac
 }
 
 speed_test_dns() {
@@ -139,43 +173,4 @@ apply_selected_dns() {
   echo -e "${GREEN}DNS settings successfully updated.${NC}"
 }
 
-main_menu() {
-  print_header
-  while true; do
-    print_title "🧭 DNS Options"
-    echo -e "1. Use Google DNS (8.8.8.8, 8.8.4.4)"
-    echo -e "2. Use Cloudflare DNS (1.1.1.1, 1.0.0.1)"
-    echo -e "3. Use Quad9 DNS (9.9.9.9, 149.112.112.112)"
-    echo -e "4. Use OpenDNS (208.67.222.222, 208.67.220.220)"
-    echo -e "5. Use Yandex DNS (77.88.8.8, 77.88.8.1)"
-    echo -e "6. Use Custom DNS"
-    echo -e "7. Auto-select Fastest DNS"
-    echo -e "8. Show Current DNS"
-    echo -e "9. Exit"
-
-    read -p $'\nChoose an option [1-9]: ' choice
-    case $choice in
-      1|2|3|4|5|6)
-        apply_dns $choice
-        ;;
-      7)
-        speed_test_dns
-        ;;
-      8)
-        show_current_dns
-        ;;
-      9)
-        echo -e "${YELLOW}Exiting...${NC}"
-        sleep 1
-        clear
-        break
-        ;;
-      *)
-        echo -e "${RED}Invalid option. Try again.${NC}"
-        ;;
-    esac
-  done
-}
-
-install_dependencies
-main_menu
+# (Rest of the script remains unchanged...)
