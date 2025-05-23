@@ -17,7 +17,7 @@ print_header() {
   clear
   echo -e "${BOLD}${CYAN}"
   echo -e "╔════════════════════════════════════════════╗"
-  echo -e "║          🚀 DNS Changer by acor1           ║"
+  echo -e "║          🚀 DNS Changer by acor1          ║"
   echo -e "╚════════════════════════════════════════════╝"
   echo -e "${NC}\n"
 }
@@ -119,6 +119,7 @@ apply_dns() {
     echo -e "DNS updated via systemd-resolved"
     ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
     iface=$(ip -o link show | awk -F': ' '{print $2}' | grep -v "lo" | head -n1)
+    resolvectl revert "$iface"
     resolvectl dns "$iface" $dns1 $dns2
     resolvectl domain "$iface" "~."
     resolvectl default-route "$iface" yes
