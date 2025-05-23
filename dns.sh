@@ -36,8 +36,8 @@ install_dependencies() {
 
 show_current_dns() {
   print_title "🔎 Current DNS Settings"
-  if command -v systemd-resolve >/dev/null 2>&1; then
-    systemd-resolve --status | grep 'DNS Servers' -A2
+  if command -v resolvectl >/dev/null 2>&1; then
+    resolvectl status | grep -A2 'DNS Servers'
   else
     cat /etc/resolv.conf | grep nameserver
   fi
@@ -118,7 +118,8 @@ apply_dns() {
   if command -v systemd-resolve >/dev/null 2>&1; then
     echo -e "DNS updated via systemd-resolved"
     ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
-    resolvectl dns eth0 $dns1 $dns2
+    iface=$(ip -o link show | awk -F': ' '{print $2}' | grep -v "lo" | head -n1)
+    resolvectl dns "$iface" $dns1 $dns2
   else
     echo -e "DNS updated via /etc/resolv.conf"
     echo -e "nameserver $dns1\nnameserver $dns2" > /etc/resolv.conf
