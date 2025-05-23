@@ -17,7 +17,7 @@ print_header() {
   clear
   echo -e "${BOLD}${CYAN}"
   echo -e "╔════════════════════════════════════════════╗"
-  echo -e "║          🚀 DNS Changer by acor1          ║"
+  echo -e "║          🚀 DNS Changer by acor1           ║"
   echo -e "╚════════════════════════════════════════════╝"
   echo -e "${NC}\n"
 }
@@ -37,7 +37,7 @@ install_dependencies() {
 show_current_dns() {
   print_title "🔎 Current DNS Settings"
   if command -v resolvectl >/dev/null 2>&1; then
-    resolvectl status | grep -A2 'DNS Servers'
+    resolvectl status
   else
     cat /etc/resolv.conf | grep nameserver
   fi
@@ -115,11 +115,14 @@ apply_dns() {
       ;;
   esac
 
-  if command -v systemd-resolve >/dev/null 2>&1; then
+  if command -v resolvectl >/dev/null 2>&1; then
     echo -e "DNS updated via systemd-resolved"
     ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
     iface=$(ip -o link show | awk -F': ' '{print $2}' | grep -v "lo" | head -n1)
     resolvectl dns "$iface" $dns1 $dns2
+    resolvectl domain "$iface" "~."
+    resolvectl default-route "$iface" yes
+    resolvectl flush-caches
   else
     echo -e "DNS updated via /etc/resolv.conf"
     echo -e "nameserver $dns1\nnameserver $dns2" > /etc/resolv.conf
