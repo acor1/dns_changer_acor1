@@ -36,8 +36,8 @@ install_dependencies() {
 
 show_current_dns() {
   print_title "🔎 Current DNS Settings"
-  if command -v systemd-resolve >/dev/null 2>&1; then
-    systemd-resolve --status | grep 'DNS Servers' -A2
+  if command -v resolvectl >/dev/null 2>&1; then
+    resolvectl status
   else
     cat /etc/resolv.conf | grep nameserver
   fi
@@ -67,58 +67,58 @@ make_dns_persistent() {
   fi
 }
 
-apply_dns() {
-  method=$1
-  case $method in
-    1)
-      print_title "⚙️ Applying Google DNS"
-      dns1=8.8.8.8
-      dns2=8.8.4.4
-      ;;
-    2)
-      print_title "⚙️ Applying Cloudflare DNS"
-      dns1=1.1.1.1
-      dns2=1.0.0.1
-      ;;
-    3)
-      print_title "⚙️ Applying Quad9 DNS"
-      dns1=9.9.9.9
-      dns2=149.112.112.112
-      ;;
-    4)
-      print_title "⚙️ Applying OpenDNS"
-      dns1=208.67.222.222
-      dns2=208.67.220.220
-      ;;
-    5)
-      print_title "⚙️ Applying Yandex DNS"
-      dns1=77.88.8.8
-      dns2=77.88.8.1
-      ;;
-    6)
-      print_title "📝 Enter Custom DNS"
-      echo -e "Please enter IP in correct format (e.g. 1.1.1.1)"
-      read -p "Enter primary DNS: " dns1
-      while ! validate_ip $dns1; do
-        echo -e "${RED}Invalid format. Please try again.${NC}"
-        read -p "Enter primary DNS: " dns1
-      done
-      read -p "Enter secondary DNS: " dns2
-      while ! validate_ip $dns2; do
-        echo -e "${RED}Invalid format. Please try again.${NC}"
-        read -p "Enter secondary DNS: " dns2
-      done
-      ;;
-    *)
-      echo -e "${RED}Invalid option${NC}"
-      exit 1
-      ;;
+speed_test_dns() {
+  declare -A dns_list=(
+    ["Google DNS"]="8.8.8.8"
+    ["Cloudflare DNS"]="1.1.1.1"
+    ["Quad9 DNS"]="9.9.9.9"
+    ["OpenDNS"]="208.67.222.222"
+    ["Yandex DNS"]="77.88.8.8"
+  )
+
+  print_title "🚀 Testing DNS Speed"
+  fastest_dns=""
+  fastest_time=99999
+
+  for name in "${!dns_list[@]}"; do
+    ip="${dns_list[$name]}"
+    result=$(ping -c 1 -W 1 $ip 2>/dev/null | grep 'time=' | awk -F'time=' '{print $2}' | cut -d' ' -f1)
+    if [[ -n "$result" ]]; then
+      time_ms=$(echo $result | cut -d'.' -f1)
+      echo -e "$name ($ip) -> ${time_ms}ms"
+      if (( time_ms < fastest_time )); then
+        fastest_time=$time_ms
+        fastest_dns=$name
+        fastest_ip=$ip
+      fi
+    else
+      echo -e "$name ($ip) -> ${RED}No response${NC}"
+    fi
+  done
+
+  echo -e "\n${GREEN}Fastest DNS is: $fastest_dns ($fastest_ip)${NC}"
+
+  case $fastest_dns in
+    "Google DNS") dns1=8.8.8.8; dns2=8.8.4.4;;
+    "Cloudflare DNS") dns1=1.1.1.1; dns2=1.0.0.1;;
+    "Quad9 DNS") dns1=9.9.9.9; dns2=149.112.112.112;;
+    "OpenDNS") dns1=208.67.222.222; dns2=208.67.220.220;;
+    "Yandex DNS") dns1=77.88.8.8; dns2=77.88.8.1;;
   esac
 
-  if command -v systemd-resolve >/dev/null 2>&1; then
+  apply_selected_dns
+}
+
+apply_selected_dns() {
+  if command -v resolvectl >/dev/null 2>&1; then
     echo -e "DNS updated via systemd-resolved"
     ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
-    resolvectl dns eth0 $dns1 $dns2
+    iface=$(ip -o link show | awk -F': ' '{print $2}' | grep -v "lo" | head -n1)
+    resolvectl revert "$iface"
+    resolvectl dns "$iface" $dns1 $dns2
+    resolvectl domain "$iface" "~."
+    resolvectl default-route "$iface" yes
+    resolvectl flush-caches
   else
     echo -e "DNS updated via /etc/resolv.conf"
     echo -e "nameserver $dns1\nnameserver $dns2" > /etc/resolv.conf
@@ -149,18 +149,22 @@ main_menu() {
     echo -e "4. Use OpenDNS (208.67.222.222, 208.67.220.220)"
     echo -e "5. Use Yandex DNS (77.88.8.8, 77.88.8.1)"
     echo -e "6. Use Custom DNS"
-    echo -e "7. Show Current DNS"
-    echo -e "8. Exit"
+    echo -e "7. Auto-select Fastest DNS"
+    echo -e "8. Show Current DNS"
+    echo -e "9. Exit"
 
-    read -p $'\nChoose an option [1-8]: ' choice
+    read -p $'\nChoose an option [1-9]: ' choice
     case $choice in
       1|2|3|4|5|6)
         apply_dns $choice
         ;;
       7)
-        show_current_dns
+        speed_test_dns
         ;;
       8)
+        show_current_dns
+        ;;
+      9)
         echo -e "${YELLOW}Exiting...${NC}"
         sleep 1
         clear
